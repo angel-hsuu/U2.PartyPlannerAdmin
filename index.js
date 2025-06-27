@@ -1,7 +1,8 @@
 // === Constants ===
 const BASE = "https://fsa-crud-2aa9294fe819.herokuapp.com/api";
-const COHORT = ""; // Make sure to change this!
+const COHORT = "/2506-Angel"; // Make sure to change this!
 const API = BASE + COHORT;
+
 
 // === State ===
 let parties = [];
@@ -9,7 +10,9 @@ let selectedParty;
 let rsvps = [];
 let guests = [];
 
-/** Updates state with all parties from the API */
+// === API Calls ===
+
+/** Get all parties */
 async function getParties() {
   try {
     const response = await fetch(API + "/events");
@@ -21,7 +24,7 @@ async function getParties() {
   }
 }
 
-/** Updates state with a single party from the API */
+/** Get one party */
 async function getParty(id) {
   try {
     const response = await fetch(API + "/events/" + id);
@@ -33,7 +36,34 @@ async function getParty(id) {
   }
 }
 
-/** Updates state with all RSVPs from the API */
+/** Add new party */
+async function addParty(party) {
+  try {
+    await fetch(API + "/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(party),
+    });
+    await getParties();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+/** Delete party */
+async function deleteParty(id) {
+  try {
+    await fetch(API + "/events/" + id, {
+      method: "DELETE",
+    });
+    selectedParty = undefined;
+    await getParties();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+/** Get RSVPs */
 async function getRsvps() {
   try {
     const response = await fetch(API + "/rsvps");
@@ -45,7 +75,7 @@ async function getRsvps() {
   }
 }
 
-/** Updates state with all guests from the API */
+/** Get Guests */
 async function getGuests() {
   try {
     const response = await fetch(API + "/guests");
@@ -59,7 +89,6 @@ async function getGuests() {
 
 // === Components ===
 
-/** Party name that shows more details about the party when clicked */
 function PartyListItem(party) {
   const $li = document.createElement("li");
 
@@ -67,25 +96,39 @@ function PartyListItem(party) {
     $li.classList.add("selected");
   }
 
-  $li.innerHTML = `
-    <a href="#selected">${party.name}</a>
-  `;
+  $li.innerHTML = `<a href="#selected">${party.name}</a>`;
   $li.addEventListener("click", () => getParty(party.id));
   return $li;
 }
 
-/** A list of names of all parties */
 function PartyList() {
   const $ul = document.createElement("ul");
   $ul.classList.add("parties");
 
-  const $parties = parties.map(PartyListItem);
-  $ul.replaceChildren(...$parties);
+  const $items = parties.map(PartyListItem);
+  $ul.replaceChildren(...$items);
 
   return $ul;
 }
 
-/** Detailed information about the selected party */
+function GuestList() {
+  const $ul = document.createElement("ul");
+  const guestsAtParty = guests.filter((guest) =>
+    rsvps.find(
+      (rsvp) => rsvp.guestId === guest.id && rsvp.eventId === selectedParty.id
+    )
+  );
+
+  const $guests = guestsAtParty.map((guest) => {
+    const $li = document.createElement("li");
+    $li.textContent = guest.name;
+    return $li;
+  });
+
+  $ul.replaceChildren(...$guests);
+  return $ul;
+}
+
 function SelectedParty() {
   if (!selectedParty) {
     const $p = document.createElement("p");
@@ -97,38 +140,71 @@ function SelectedParty() {
   $party.innerHTML = `
     <h3>${selectedParty.name} #${selectedParty.id}</h3>
     <time datetime="${selectedParty.date}">
-      ${selectedParty.date.slice(0, 10)}
+      ${selectedParty.date}
     </time>
-    <address>${selectedParty.location}</address>
+    <address><em>${selectedParty.location}</em></address>
     <p>${selectedParty.description}</p>
     <GuestList></GuestList>
   `;
+
   $party.querySelector("GuestList").replaceWith(GuestList());
+
+  const $delete = document.createElement("button");
+  $delete.textContent = "Delete party";
+  $delete.addEventListener("click", () => deleteParty(selectedParty.id));
+  $party.appendChild($delete);
 
   return $party;
 }
 
-/** List of guests attending the selected party */
-function GuestList() {
-  const $ul = document.createElement("ul");
-  const guestsAtParty = guests.filter((guest) =>
-    rsvps.find(
-      (rsvp) => rsvp.guestId === guest.id && rsvp.eventId === selectedParty.id
-    )
-  );
+function NewPartyForm() {
+  const $form = document.createElement("form");
+  $form.innerHTML = `
+    <label>
+      Name
+      <input name="name" required />
+    </label>
+    <label>
+      Description
+      <input name="description" required />
+    </label>
+    <label>
+      Date
+      <input name="date" type="date" required />
+    </label>
+    <label>
+      Location
+      <input name="location" required />
+    </label>
+    <button>Add party</button>
+  `;
 
-  // Simple components can also be created anonymously:
-  const $guests = guestsAtParty.map((guest) => {
-    const $guest = document.createElement("li");
-    $guest.textContent = guest.name;
-    return $guest;
-  });
-  $ul.replaceChildren(...$guests);
+$form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const data = new FormData($form);
 
-  return $ul;
+  const dateInput = data.get("date");
+  const isoDate = new Date(dateInput).toISOString();
+
+  const newParty = {
+    name: data.get("name"),
+    description: data.get("description"),
+    date: isoDate,
+    location: data.get("location"),
+  };
+
+  console.log("Submitting new party:", newParty); // ✅ Check this
+
+  await addParty(newParty);
+  $form.reset();
+});
+
+
+  return $form;
 }
 
 // === Render ===
+
 function render() {
   const $app = document.querySelector("#app");
   $app.innerHTML = `
@@ -137,6 +213,8 @@ function render() {
       <section>
         <h2>Upcoming Parties</h2>
         <PartyList></PartyList>
+        <h3>Add a new party</h3>
+        <NewPartyForm></NewPartyForm>
       </section>
       <section id="selected">
         <h2>Party Details</h2>
@@ -147,7 +225,11 @@ function render() {
 
   $app.querySelector("PartyList").replaceWith(PartyList());
   $app.querySelector("SelectedParty").replaceWith(SelectedParty());
+  $app.querySelector("NewPartyForm").replaceWith(NewPartyForm());
 }
+
+
+// === Init ===
 
 async function init() {
   await getParties();
